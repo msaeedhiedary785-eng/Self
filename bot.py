@@ -163,18 +163,14 @@ async def handle_text(event):
     elif text == "📜 قوانین «":
         await event.respond("قوانین استفاده از سیستم سلف‌بات استار...", buttons=main_menu())
 
-# تابع جدید و کاملاً ساده‌شده برای تضمین گرفتن هر رسانه‌ای در پی‌وی
 async def catch_media_handler(event):
     try:
-        # بررسی اینکه حتما در چت خصوصی باشد و پیام ارسالی خودمان نباشد
         if not event.is_private or event.out:
             return
 
         if event.media:
-            # استخراج تایم انقضا
             ttl_seconds = getattr(event.message, 'ttl_period', None) or getattr(event.media, 'ttl_seconds', None)
             
-            # استخراج زمان ویدیو
             video_duration = None
             if hasattr(event.media, 'document') and event.media.document:
                 for attr in event.media.document.attributes:
@@ -255,7 +251,7 @@ async def callback(event):
 
 async def restore_active_clients():
     for chat_id, data in database.items():
-        if data.get("status"] == "active" and "phone" in data:
+        if data.get("status") == "active" and "phone" in data:
             phone = data["phone"]
             try:
                 client = TelegramClient(f"session_{phone.replace('+', '')}", API_ID, API_HASH)
