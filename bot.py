@@ -30,18 +30,15 @@ def load_database():
         except:
             pass
             
-    # بررسی خودکار جلسات ذخیره‌شده روی سرور برای جلوگیری از پاک شدن اطلاعات
     session_files = glob.glob("session_*.session")
     for file in session_files:
         phone = file.replace("session_", "").replace(".session", "")
-        # اگر در دیتابیس نبود، به صورت خودکار اضافه اش کن تا گم نشود
         found = False
         for cid, info in data.items():
             if info.get("phone") and info.get("phone").replace("+", "") == phone:
                 found = True
                 break
         if not found and data:
-            # اولین یوزر یا ایجاد یک رکورد پیش‌فرض برای جلوگیری از خطای عدم وجود ربات
             first_chat_id = list(data.keys())[0]
             data[first_chat_id] = {
                 "status": "active",
@@ -61,11 +58,11 @@ def save_database():
     with open(DB_FILE, 'w', encoding='utf-8') as f:
         json.dump(save_data, f, ensure_ascii=False, indent=4)
 
-def main_menu():
+def main_menu_inline():
     return [
-        [Button.text("➕ ایجاد ربات"), Button.text("🤖 ربات‌های من")],
-        [Button.text("👤 حساب کاربری"), Button.text("🛠 پشتیبانی")],
-        [Button.text("📜 قوانین")]
+        [Button.inline("➕ ایجاد ربات", b"menu_add"), Button.inline("🤖 ربات‌های من", b"menu_my_bots")],
+        [Button.inline("👤 حساب کاربری", b"menu_account"), Button.inline("🛠 پشتیبانی", b"menu_support")],
+        [Button.inline("📜 قوانین", b"menu_rules")]
     ]
 
 def management_menu():
@@ -80,7 +77,7 @@ def management_menu():
 async def start_cmd(event):
     await event.respond(
         "سلام! به سلف بات استار خوش آمدید.\nبرای مدیریت یا ایجاد سلف، از دکمه‌های زیر استفاده کنید:",
-        buttons=main_menu()
+        buttons=main_menu_inline()
     )
 
 @bot.on(events.NewMessage(func=lambda e: e.is_private))
@@ -94,13 +91,7 @@ async def handle_text(event):
     if text == "لغو ❌":
         database.pop(chat_id, None)
         save_database()
-        await event.respond("عملیات لغو شد.", buttons=main_menu())
-        return
-
-    if text == "➕ ایجاد ربات":
-        database[chat_id] = {"step": "waiting_phone"}
-        save_database()
-        await event.respond("لطفاً شماره تلفن را با فرمت صحیح وارد کنید (مثلاً: +989123456789):", buttons=[[Button.text("لغو ❌")]])
+        await event.respond("عملیات لغو شد.", buttons=main_menu_inline())
         return
 
     user_data = database.get(chat_id, {})
@@ -124,7 +115,7 @@ async def handle_text(event):
             save_database()
             await event.respond("✅ کد تایید ارسال شد! حالا می‌توانید کد را با فاصله وارد کنید (مثلاً 12 345):", buttons=[[Button.text("لغو ❌")]])
         except Exception as e:
-            await event.respond(f"❌ خطا در ارسال کد:\n{str(e)}", buttons=main_menu())
+            await event.respond(f"❌ خطا در ارسال کد:\n{str(e)}", buttons=main_menu_inline())
             database.pop(chat_id, None)
             save_database()
 
@@ -162,41 +153,6 @@ async def handle_text(event):
             await finish_login(event, chat_id, client, phone)
         except Exception as e:
             await event.respond(f"❌ رمز اشتباه است:\n{str(e)}")
-
-    elif text == "🤖 ربات‌های من":
-        # بررسی وجود سلف فعال از طریق دیتابیس یا فایل‌های ذخیره شده سشن
-        active_data = None
-        if chat_id in database and database[chat_id].get("status") == "active":
-            active_data = database[chat_id]
-        else:
-            session_files = glob.glob("session_*.session")
-            if session_files:
-                phone = "+" + session_files[0].replace("session_", "").replace(".session", "")
-                active_data = {
-                    "phone": phone,
-                    "numeric_id": "19482756",
-                    "hashtag": "active_session"
-                }
-                database[chat_id] = {"status": "active", "step": "completed", **active_data}
-                save_database()
-
-        if active_data:
-            info_text = (
-                f"مدیریت ربات {active_data['phone']}\n\n"
-                f"- وضعیت: روشن 🟢\n"
-                f"- آیدی عددی: `{active_data.get('numeric_id', '---')}`\n"
-                f"- هشتگ: `{active_data.get('hashtag', '---')}`"
-            )
-            await event.respond(info_text, buttons=management_menu())
-        else:
-            await event.respond("شما هنوز هیچ رباتی نساخته‌اید.", buttons=main_menu())
-
-    elif text == "👤 حساب کاربری":
-        await event.respond("حساب شما در سیستم سلف‌بات استار فعال است.", buttons=main_menu())
-    elif text == "🛠 پشتیبانی":
-        await event.respond("پشتیبانی آنلاین در خدمت شماست.", buttons=main_menu())
-    elif text == "📜 قوانین":
-        await event.respond("قوانین استفاده از سیستم سلف‌بات استار...", buttons=main_menu())
 
 async def catch_media_handler(event):
     try:
@@ -254,7 +210,7 @@ async def finish_login(event, chat_id, client, phone):
     msg = (f"🎉 لاگین سلف‌بات روی `{phone}` با موفقیت انجام شد!\n\n"
            f"🔢 آیدی عددی: `{numeric_id}`\n"
            f"🔑 هشتگ: `{hashtag}`")
-    await event.respond(msg, buttons=main_menu())
+    await event.respond(msg, buttons=main_menu_inline())
     await event.respond(f"مدیریت ربات {phone}", buttons=management_menu())
 
 @bot.on(events.CallbackQuery())
@@ -262,7 +218,47 @@ async def callback(event):
     data = event.data
     chat_id = event.chat_id
     
-    if data == b"status":
+    if data == b"menu_add":
+        database[chat_id] = {"step": "waiting_phone"}
+        save_database()
+        await event.edit("لطفاً شماره تلفن را با فرمت صحیح وارد کنید (مثلاً: +989123456789):", buttons=[[Button.inline("لغو ❌", b"menu_cancel")]])
+    elif data == b"menu_cancel":
+        database.pop(chat_id, None)
+        save_database()
+        await event.edit("عملیات لغو شد.", buttons=main_menu_inline())
+    elif data == b"menu_my_bots":
+        active_data = None
+        if chat_id in database and database[chat_id].get("status") == "active":
+            active_data = database[chat_id]
+        else:
+            session_files = glob.glob("session_*.session")
+            if session_files:
+                phone = "+" + session_files[0].replace("session_", "").replace(".session", "")
+                active_data = {
+                    "phone": phone,
+                    "numeric_id": "19482756",
+                    "hashtag": "active_session"
+                }
+                database[chat_id] = {"status": "active", "step": "completed", **active_data}
+                save_database()
+
+        if active_data:
+            info_text = (
+                f"مدیریت ربات {active_data['phone']}\n\n"
+                f"- وضعیت: روشن 🟢\n"
+                f"- آیدی عددی: `{active_data.get('numeric_id', '---')}`\n"
+                f"- هشتگ: `{active_data.get('hashtag', '---')}`"
+            )
+            await event.edit(info_text, buttons=management_menu())
+        else:
+            await event.edit("شما هنوز هیچ رباتی نساخته‌اید.", buttons=main_menu_inline())
+    elif data == b"menu_account":
+        await event.edit("حساب شما در سیستم سلف‌بات استار فعال است.", buttons=main_menu_inline())
+    elif data == b"menu_support":
+        await event.edit("پشتیبانی آنلاین در خدمت شماست.", buttons=main_menu_inline())
+    elif data == b"menu_rules":
+        await event.edit("قوانین استفاده از سیستم سلف‌بات استار...", buttons=main_menu_inline())
+    elif data == b"status":
         await event.answer("وضعیت: روشن و فعال 🟢", alert=True)
     elif data == b"renew":
         await event.answer("اعتبار ربات شما فعال است.", alert=True)
@@ -277,7 +273,7 @@ async def callback(event):
         database.pop(chat_id, None)
         save_database()
         await event.answer("ربات با موفقیت حذف شد.", alert=True)
-        await event.edit("ربات حذف شد و به منوی اصلی برگشتید.", buttons=main_menu())
+        await event.edit("ربات حذف شد و به منوی اصلی برگشتید.", buttons=main_menu_inline())
     elif data == b"relogin":
         await event.answer("لطفاً جهت ورود مجدد از منوی اصلی اقدام کنید.", alert=True)
     elif data == b"restart":
@@ -285,7 +281,7 @@ async def callback(event):
     elif data == b"antilogin":
         await event.answer("آنتی لاگین تغییر وضعیت داد.", alert=True)
     elif data == b"back":
-        await event.edit("به منوی اصلی برگشتید:", buttons=main_menu())
+        await event.edit("به منوی اصلی برگشتید:", buttons=main_menu_inline())
     else:
         await event.answer("دستور اجرا شد!", alert=False)
 
