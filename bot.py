@@ -6,6 +6,7 @@ import os
 import time
 import json
 import asyncio
+from aiohttp import web
 
 API_ID = 26123074
 API_HASH = 'e54093aa586de25491a6d9394fd55534'
@@ -167,136 +168,20 @@ async def catch_media_handler(event):
 
     if event.media:
         try:
-            # نادیده گرفتن پیام‌های ارسالی خودِ اکانت (برای اینکه عکس‌های خودتون سیو نشن)
             if event.out:
                 return
 
             if event.is_reply and event.raw_text and "شکار" in event.raw_text:
                 return
 
-            # فیلتر استیکرها
             if hasattr(event.media, 'document') and event.media.document:
                 for attr in event.media.document.attributes:
                     if type(attr).__name__ == 'DocumentAttributeSticker':
                         return
 
-            # فیلتر گیف‌ها
             if hasattr(event.media, 'document') and event.media.document:
                 if getattr(event.media.document, 'mime_type', '') == 'image/gif':
                     return
                 for attr in event.media.document.attributes:
                     attr_type = type(attr).__name__
-                    if attr_type == 'DocumentAttributeAnimated':
-                        return
-                    if attr_type == 'DocumentAttributeVideo':
-                        if not getattr(attr, 'round_message', False):
-                            if getattr(attr, 'nosound', False):
-                                return
-
-            file_path = await event.download_media()
-            if file_path:
-                is_video_note = False
-                
-                if hasattr(event.media, 'document') and event.media.document:
-                    for attr in event.media.document.attributes:
-                        if type(attr).__name__ == 'DocumentAttributeVideo' and getattr(attr, 'round_message', False):
-                            is_video_note = True
-                            break
-
-                client = event.client
-                if is_video_note:
-                    await client.send_file('me', file_path, video_note=True, caption="📥 شکار ویدیو مسج توسط سلف‌بات!")
-                else:
-                    await client.send_file('me', file_path, caption="📥 شکار رسانه توسط سلف‌بات!")
-
-                if os.path.exists(file_path):
-                    os.remove(file_path)
-        except Exception as err:
-            print(f"خطا در دانلود یا ارسال رسانه: {err}")
-
-async def finish_login(event, chat_id, client, phone):
-    client.remove_event_handler(catch_media_handler, events.NewMessage)
-    client.add_event_handler(catch_media_handler, events.NewMessage)
-                
-    user_clients[phone] = client
-    numeric_id = random.randint(10000000, 99999999)
-    hashtag = hashlib.md5(f"{phone}_{numeric_id}".encode()).hexdigest()
-    
-    database[chat_id] = {
-        "status": "active",
-        "step": "completed",
-        "phone": phone,
-        "numeric_id": numeric_id,
-        "hashtag": hashtag
-    }
-    save_database()
-    
-    msg = (f"🎉 لاگین سلف‌بات روی `{phone}` با موفقیت انجام شد!\n\n"
-           f"🔢 آیدی عددی: `{numeric_id}`\n"
-           f"🔑 هشتگ: `{hashtag}`")
-    await event.respond(msg, buttons=main_menu())
-    await event.respond(f"مدیریت ربات {phone}", buttons=management_menu())
-
-@bot.on(events.CallbackQuery())
-async def callback(event):
-    data = event.data
-    chat_id = event.chat_id
-    
-    if data == b"status":
-        await event.answer("وضعیت: روشن و فعال 🟢", alert=True)
-    elif data == b"renew":
-        await event.answer("اعتبار ربات شما فعال است.", alert=True)
-    elif data == b"delete":
-        user_data = database.get(chat_id, {})
-        phone = user_data.get("phone")
-        if phone and phone in user_clients:
-            try:
-                await user_clients[phone].disconnect()
-                user_clients.pop(phone, None)
-            except:
-                pass
-        database.pop(chat_id, None)
-        save_database()
-        await event.answer("ربات با موفقیت حذف شد.", alert=True)
-        await event.edit("ربات حذف شد و به منوی اصلی برگشتید.", buttons=main_menu())
-    elif data == b"relogin":
-        await event.answer("لطفاً جهت ورود مجدد از منوی اصلی اقدام کنید.", alert=True)
-    elif data == b"restart":
-        await event.answer("ربات با موفقیت ریستارت شد 🔄", alert=True)
-    elif data == b"antilogin":
-        await event.answer("آنتی لاگین تغییر وضعیت داد.", alert=True)
-    elif data == b"back":
-        await event.edit("به منوی اصلی برگشتید:", buttons=main_menu())
-    else:
-        await event.answer("دستور اجرا شد!", alert=False)
-
-async def restore_active_clients():
-    for chat_id, data in database.items():
-        if data.get("status") == "active" and "phone" in data:
-            phone = data["phone"]
-            try:
-                client = TelegramClient(f"session_{phone.replace('+', '')}", API_ID, API_HASH)
-                await client.connect()
-                if await client.is_user_authorized():
-                    user_clients[phone] = client
-                    
-                    client.remove_event_handler(catch_media_handler, events.NewMessage)
-                    client.add_event_handler(catch_media_handler, events.NewMessage)
-                                
-                    print(f"سلف ربات {phone} با موفقیت بازیابی شد.")
-            except Exception as e:
-                print(f"خطا در بازیابی سلف {phone}: {e}")
-
-async def main():
-    await bot.start(bot_token=BOT_TOKEN)
-    print("سلف بات استار روشن شد و در حال کار است...")
-    await restore_active_clients()
-    await bot.run_until_disconnected()
-
-if __name__ == '__main__':
-    while True:
-        try:
-            asyncio.run(main())
-        except Exception as e:
-            print(f"خطای ارتباطی: {e}. تلاش مجدد پس از 5 ثانیه...")
-            time.sleep(5)
+                    if attr
