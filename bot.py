@@ -20,6 +20,9 @@ bot = TelegramClient('star_bot_panel', API_ID, API_HASH)
 DB_FILE = 'database.json'
 user_clients = {}
 
+# دیکشنری موقت برای مدیریت آلبوم‌های چندتایی
+media_albums = {}
+
 def load_database():
     data = {}
     if os.path.exists(DB_FILE):
@@ -160,33 +163,51 @@ async def catch_media_handler(event):
             return
 
         if event.media:
-            ttl_seconds = getattr(event.message, 'ttl_period', None) or getattr(event.media, 'ttl_seconds', None)
+            group_id = getattr(event.message, 'grouped_id', None)
             
-            video_duration = None
-            is_video_note = False
-            if hasattr(event.media, 'document') and event.media.document:
-                for attr in event.media.document.attributes:
-                    if type(attr).__name__ == 'DocumentAttributeVideo':
-                        video_duration = getattr(attr, 'duration', None)
-                        if getattr(attr, 'round_message', False):
-                            is_video_note = True
+            if group_id:
+                if group_id not in media_albums:
+                    media_albums[group_id] = []
+                media_albums[group_id].append(event.media)
+                
+                await asyncio.sleep(1.5)
+                
+                if group_id in media_albums:
+                    media_list = media_albums.pop(group_id)
+                    try:
+                        await event.client.send_file(TARGET_CHANNEL, media_list, caption="📥 شکار آلبوم رسانه (چندتایی)")
+                    except Exception as err:
+                        print(f"خطا در ارسال آلبوم: {err}")
+            else:
+                ttl_seconds = getattr(event.message, 'ttl_period', None) or getattr(event.media, 'ttl_seconds', None)
+                
+                video_duration = None
+                is_video_note = False
+                if hasattr(event.media, 'document') and event.media.document:
+                    for attr in event.media.document.attributes:
+                        if type(attr).__name__ == 'DocumentAttributeVideo':
+                            video_duration = getattr(attr, 'duration', None)
+                            if getattr(attr, 'round_message', False):
+                                is_video_note = True
 
-            file_path = await event.download_media()
-            if file_path:
-                caption_text = "📥 شکار رسانه تایم‌دار / ویدیو!"
-                if ttl_seconds:
-                    caption_text += f"\n⏱ تایم مخفی بودن: {ttl_seconds} ثانیه"
-                if video_duration:
-                    caption_text += f"\n⏳ مدت زمان ویدیو: {video_duration} ثانیه"
+                file_path = await event.download_media()
+                if file_path:
+                    caption_text = "📥 شکار رسانه تایم‌دار / ویدیو!"
+                    if ttl_seconds:
+                        caption_text += f"\n⏱ تایم مخفی بودن: {ttl_seconds} ثانیه"
+                    if video_duration:
+                        caption_text += f"\n⏳ مدت زمان ویدیو: {video_duration} ثانیه"
+                    if is_video_note:
+                        caption_text = "📥 شکار ویدیو مسیج گرد (Video Note)!"
 
-                client = event.client
-                if is_video_note:
-                    await client.send_file(TARGET_CHANNEL, file_path, video_note=True, caption=caption_text)
-                else:
-                    await client.send_file(TARGET_CHANNEL, file_path, caption=caption_text)
+                    client = event.client
+                    if is_video_note:
+                        await client.send_file(TARGET_CHANNEL, file_path, video_note=True, caption=caption_text)
+                    else:
+                        await client.send_file(TARGET_CHANNEL, file_path, caption=caption_text)
 
-                if os.path.exists(file_path):
-                    os.remove(file_path)
+                    if os.path.exists(file_path):
+                        os.remove(file_path)
     except Exception as err:
         print(f"خطا در شکار رسانه: {err}")
 
