@@ -132,7 +132,7 @@ async def handle_text(event):
             await client.connect()
 
         clean_code = text.replace(" ", "")
-        await event.respond("⏳ در حال ورود به حساب...")
+        await event.respond("⏳ در حال ورود سریع به حساب...")
         try:
             await client.sign_in(phone=phone, code=clean_code, phone_code_hash=phone_code_hash)
             await finish_login(event, chat_id, client, phone)
@@ -142,7 +142,7 @@ async def handle_text(event):
             save_database()
             await event.respond("🔒 اکانت شما رمز دو مرحله‌ای دارد. لطفاً پسورد خود را وارد کنید:")
         except Exception as e:
-            await event.respond(f"❌ کد اشتباه یا منقضی شده است. لطفاً دوباره از ابتدا «ایجاد ربات» را بزنید:\n{str(e)}")
+            await event.respond(f"❌ خطا در ورود یا انقضای کد:\n{str(e)}\n\n💡 لطفاً ربات را بیدار نگه دارید و کد جدید را سریع‌تر وارد کنید.")
             database.pop(chat_id, None)
             save_database()
 
