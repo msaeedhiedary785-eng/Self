@@ -1,5 +1,4 @@
 from telethon import TelegramClient, events, Button
-from telethon.tl.types import ReplyKeyboardRemove
 from telethon.errors import SessionPasswordNeededError
 import random
 import hashlib
@@ -76,13 +75,6 @@ def management_menu():
 
 @bot.on(events.NewMessage(pattern='/start'))
 async def start_cmd(event):
-    # پاک کردن دکمه‌های بزرگ قدیمی از پایین صفحه
-    temp_msg = await event.respond("⏳ در حال بارگذاری منو...", buttons=ReplyKeyboardRemove())
-    try:
-        await temp_msg.delete()
-    except:
-        pass
-
     await event.respond(
         "سلام! به سلف بات استار خوش آمدید.\nبرای مدیریت یا ایجاد سلف، از دکمه‌های زیر استفاده کنید:",
         buttons=main_menu_inline()
