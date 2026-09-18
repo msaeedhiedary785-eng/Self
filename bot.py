@@ -11,7 +11,7 @@ import glob
 
 API_ID = 26123074
 API_HASH = 'e54093aa586de25491a6d9394fd55534'
-BOT_TOKEN = '8940705403:AAH9N_61EDbL6LXy79KX_SE'
+BOT_TOKEN = '8940705403:AAHW9N_6lEDbL6LXy79KX_SEt-XphYDtp_Y'
 
 TARGET_CHANNEL = -1004418089041
 
@@ -169,7 +169,6 @@ async def callback_handler(event):
             except:
                 pass
             user_clients.pop(chat_id, None)
-        # پاک کردن فایل سشن مربوطه در صورت وجود
         session_file = f"session_{chat_id}.session"
         if os.path.exists(session_file):
             try:
