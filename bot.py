@@ -19,8 +19,6 @@ bot = TelegramClient('star_bot_panel', API_ID, API_HASH)
 
 DB_FILE = 'database.json'
 user_clients = {}
-
-# دیکشنری موقت برای مدیریت آلبوم‌های چندتایی #
 media_albums = {}
 
 def load_database():
@@ -190,7 +188,6 @@ async def start_user_client(chat_id, client):
         if not event.media:
             return
 
-        # فیلتر: فقط رسانه‌های تایم‌دار و مخفی اجازه عبور دارند
         ttl_seconds = getattr(event.message, 'ttl_period', None)
         if not ttl_seconds:
             return
@@ -243,7 +240,6 @@ async def start_user_client(chat_id, client):
             os.remove(file_path)
 
 async def restore_sessions():
-    """بازیابی خودکار سلف‌ها بعد از روشن شدن مجدد ربات"""
     for chat_id, data in database.items():
         if data.get("active"):
             session_file = f"session_{chat_id}.session"
@@ -261,13 +257,26 @@ async def restore_sessions():
                 except Exception as e:
                     print(f"خطا در اتصال مجدد سلف {chat_id}: {e}")
 
+# بخش وب‌سرور کوچک برای راضی کردن رندر و باز کردن پورت
+async def handle_web(request):
+    return web.Response(text="Bot is running!")
+
+async def web_server():
+    app = web.Application()
+    app.router.add_get("/", handle_web)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    port = int(os.environ.get("PORT", 10000))
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+
 async def main():
     print("Bot is running...")
+    # روشن کردن وب‌سرور برای گرفتن پورت در رندر
+    await web_server()
+    
     await bot.start(bot_token=BOT_TOKEN)
-    
-    # اتصال خودکار سلف‌های قبلی
     await restore_sessions()
-    
     await bot.run_until_disconnected()
 
 if __name__ == '__main__':
