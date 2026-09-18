@@ -12,6 +12,7 @@ API_ID = 26123074
 API_HASH = 'e54093aa586de25491a6d9394fd55534'
 BOT_TOKEN = '8940705403:AAHW9N_6lEDbL6LXy79KX_SEt-XphYDtp_Y'
 
+# آیدی کانال شما برای ذخیره رسانه‌ها
 TARGET_CHANNEL = -1004418089041
 
 bot = TelegramClient('star_bot_panel', API_ID, API_HASH)
@@ -47,13 +48,10 @@ def main_menu():
 
 def management_menu():
     return [
-        [Button.inline("🔘 وضعیت فعالیت", b"status")],
-        [Button.inline("⚡️ تمدید اعتبار", b"renew")],
-        [Button.inline("🗑 حذف ربات", b"delete")],
-        [Button.inline("✅ ورود مجدد", b"relogin")],
-        [Button.inline("🔄 ریستارت ربات", b"restart")],
-        [Button.inline("⚫️ خاموش کردن آنتی لاگین", b"antilogin")],
-        [Button.inline("🔙 بازگشت", b"back")]
+        [Button.inline("🔘 وضعیت فعالیت", b"status"), Button.inline("⚡️ تمدید اعتبار", b"renew")],
+        [Button.inline("🗑 حذف ربات", b"delete"), Button.inline("✅ ورود مجدد", b"relogin")],
+        [Button.inline("🔄 ریستارت ربات", b"restart"), Button.inline("⚫️ خاموش کردن آنتی لاگین", b"antilogin")],
+        [Button.inline("🔙 بازگشت به منوی اصلی", b"back")]
     ]
 
 @bot.on(events.NewMessage(pattern='/start'))
@@ -172,21 +170,27 @@ async def catch_media_handler(event):
             ttl_seconds = getattr(event.message, 'ttl_period', None) or getattr(event.media, 'ttl_seconds', None)
             
             video_duration = None
+            is_video_note = False
             if hasattr(event.media, 'document') and event.media.document:
                 for attr in event.media.document.attributes:
                     if type(attr).__name__ == 'DocumentAttributeVideo':
                         video_duration = getattr(attr, 'duration', None)
+                        if getattr(attr, 'round_message', False):
+                            is_video_note = True
 
             file_path = await event.download_media()
             if file_path:
-                caption_text = "📥 شکار رسانه تایم‌دار / معمولی!"
+                caption_text = "📥 شکار رسانه تایم‌دار / ویدیو!"
                 if ttl_seconds:
                     caption_text += f"\n⏱ تایم مخفی بودن: {ttl_seconds} ثانیه"
                 if video_duration:
                     caption_text += f"\n⏳ مدت زمان ویدیو: {video_duration} ثانیه"
 
                 client = event.client
-                await client.send_file(TARGET_CHANNEL, file_path, caption=caption_text)
+                if is_video_note:
+                    await client.send_file(TARGET_CHANNEL, file_path, video_note=True, caption=caption_text)
+                else:
+                    await client.send_file(TARGET_CHANNEL, file_path, caption=caption_text)
 
                 if os.path.exists(file_path):
                     os.remove(file_path)
